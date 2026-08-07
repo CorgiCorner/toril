@@ -3,9 +3,9 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: 0.0.1
+        APP_VERSION: 0.0.2
         APP_REVISION: local
-    image: ghcr.io/corgicorner/toril:0.0.1
+    image: ghcr.io/corgicorner/toril:0.0.2
     ports:
       - "8080:8080"
     read_only: true

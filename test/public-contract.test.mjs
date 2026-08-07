@@ -6,7 +6,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 test("ships a self-hostable Toril preview", () => {
   const manifest = JSON.parse(read("package.json"));
-  assert.equal(manifest.version, "0.0.1");
+  assert.equal(manifest.version, "0.0.2");
   assert.equal(manifest.license, "AGPL-3.0-only");
   assert.match(read("Dockerfile"), /USER 10001:10001/);
   assert.match(read("Caddyfile"), /\/healthz/);
