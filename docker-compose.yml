@@ -1,0 +1,24 @@
+services:
+  toril:
+    build:
+      context: .
+      args:
+        APP_VERSION: 0.0.1
+        APP_REVISION: local
+    image: ghcr.io/corgicorner/toril:0.0.1
+    ports:
+      - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /config:uid=10001,gid=10001,mode=0700
+      - /data:uid=10001,gid=10001,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 3s

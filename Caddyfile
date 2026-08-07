@@ -1,0 +1,17 @@
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	@health path /healthz
+	respond @health "ok" 200
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+	}
+
+	file_server
+}

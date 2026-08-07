@@ -1,0 +1,49 @@
+name: Decline pull requests
+
+# This workflow never checks out or executes contributor code.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  decline:
+    if: >-
+      github.repository == 'CorgiCorner/toril' &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const body = [
+              "Thanks for taking the time to send this.",
+              "",
+              "Toril does not accept pull requests. This repository contains generated",
+              "release snapshots, so there is no public development branch to merge into.",
+              "",
+              "Please open an issue describing the bug or proposed change instead:",
+              "https://github.com/CorgiCorner/toril/issues/new",
+              "",
+              "Closing this automatically rather than leaving it unanswered.",
+              "CONTRIBUTING.md explains the release-history model.",
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              state: "closed",
+            });

@@ -1,0 +1,162 @@
+name: Container image
+
+on:
+  repository_dispatch:
+    types: [container-image]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-${{ github.event.client_payload.public_sha || github.sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/corgicorner/toril
+
+jobs:
+  build:
+    if: github.repository == 'CorgiCorner/toril'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resolve source
+        id: source
+        env:
+          DISPATCH_ORIGIN_SHA: ${{ github.event.client_payload.origin_sha }}
+          DISPATCH_PUBLIC_SHA: ${{ github.event.client_payload.public_sha }}
+          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = repository_dispatch ]; then
+            [[ "$DISPATCH_ORIGIN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid origin SHA"; exit 1; }
+            [[ "$DISPATCH_PUBLIC_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid public SHA"; exit 1; }
+            [[ "$DISPATCH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid version"; exit 1; }
+            {
+              echo "sha=$DISPATCH_PUBLIC_SHA"
+              echo "version=$DISPATCH_VERSION"
+              echo "publish=true"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "sha=$GITHUB_SHA"
+              echo "version=0.0.1"
+              echo "publish=false"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify release source binding
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ORIGIN_SHA: ${{ github.event.client_payload.origin_sha }}
+          PUBLIC_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: >-
+          node scripts/ci/verify-public-release-source.mjs
+          --repo "$GITHUB_REPOSITORY"
+          --sha "$PUBLIC_SHA"
+          --tag "v$VERSION"
+          --origin-sha "$ORIGIN_SHA"
+          --wait
+
+      - name: Verify version
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+        run: test "$(node -p "require('./package.json').version")" = "$VERSION"
+
+      - uses: docker/setup-qemu-action@d9ac95b0ce6755de274a90175f30a62e9ab9d26c # v3
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        if: steps.source.outputs.publish == 'true'
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and optionally publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.source.outputs.publish == 'true' }}
+          build-args: |
+            APP_VERSION=${{ steps.source.outputs.version }}
+            APP_REVISION=${{ steps.source.outputs.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.source.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.title=Toril
+            org.opencontainers.image.description=Self-hosted Toril preview
+            org.opencontainers.image.url=https://toril.dev
+            org.opencontainers.image.source=https://github.com/CorgiCorner/toril
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ steps.source.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish-release:
+    needs: build
+    if: >-
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      github.repository == 'CorgiCorner/toril' &&
+      github.event_name == 'repository_dispatch'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_SHA: ${{ github.event.client_payload.public_sha }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          [[ "$PUBLIC_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid public SHA"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid version"; exit 1; }
+          RELEASE_TAG="v$VERSION"
+          TAG_SHA="$(
+            git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}^{}" \
+              | cut -f1
+          )"
+          test "$TAG_SHA" = "$PUBLIC_SHA" \
+            || { echo "::error::Public tag $RELEASE_TAG is not bound to $PUBLIC_SHA"; exit 1; }
+
+          if RELEASE_JSON="$(
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json tagName,name,isDraft,isPrerelease 2>/dev/null
+          )"; then
+            printf '%s' "$RELEASE_JSON" | jq -e --arg tag "$RELEASE_TAG" '
+              .tagName == $tag and
+              .name == $tag and
+              (.isDraft | not) and
+              (.isPrerelease | not)
+            ' >/dev/null \
+              || { echo "::error::Existing GitHub Release metadata does not match $RELEASE_TAG"; exit 1; }
+            echo "GitHub Release $RELEASE_TAG already exists with matching metadata."
+            exit 0
+          fi
+
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n' 'Initial release.' > "$NOTES_FILE"
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes-file "$NOTES_FILE"
