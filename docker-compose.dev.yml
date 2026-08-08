@@ -1,6 +1,11 @@
 services:
   toril:
-    image: ghcr.io/corgicorner/toril:${TORIL_VERSION:?Set TORIL_VERSION to a released version}
+    build:
+      context: .
+      args:
+        APP_VERSION: dev
+        APP_REVISION: local
+    image: toril:dev
     ports:
       - "127.0.0.1:${TORIL_PORT:-8080}:8080"
     read_only: true

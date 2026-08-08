@@ -3,10 +3,10 @@
 Toril is developed in a private repository and published here as one snapshot
 commit per release. The public history is the release history.
 
-**We don't accept pull requests.** This is deliberate: Toril operates on
-production queues, and we keep one coherent design owned by the people who
-carry the pager for it. An automated workflow closes external pull requests.
-It isn't personal, and it isn't a judgement on your patch.
+**We don't accept pull requests.** This is deliberate: Toril is intended to
+operate on production queues, and we keep one coherent design owned by the
+people who will carry the pager for it. An automated workflow closes external
+pull requests. It isn't personal, and it isn't a judgement on your patch.
 
 ## What genuinely helps
 

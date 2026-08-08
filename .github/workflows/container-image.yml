@@ -7,61 +7,77 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: container-${{ github.event.client_payload.public_sha || github.sha }}
+  group: container-${{ github.event.client_payload.version || github.sha }}
   cancel-in-progress: false
 
 env:
   IMAGE: ghcr.io/corgicorner/toril
 
 jobs:
-  build:
+  prepare:
     if: github.repository == 'CorgiCorner/toril'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    outputs:
+      digest: ${{ steps.preflight.outputs.digest }}
+      mode: ${{ steps.preflight.outputs.mode }}
+      origin_sha: ${{ steps.source.outputs.origin_sha }}
+      public_sha: ${{ steps.source.outputs.public_sha }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Resolve source
         id: source
         env:
           DISPATCH_ORIGIN_SHA: ${{ github.event.client_payload.origin_sha }}
           DISPATCH_PUBLIC_SHA: ${{ github.event.client_payload.public_sha }}
-          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = repository_dispatch ]; then
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
             [[ "$DISPATCH_ORIGIN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid origin SHA"; exit 1; }
             [[ "$DISPATCH_PUBLIC_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid public SHA"; exit 1; }
-            [[ "$DISPATCH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid version"; exit 1; }
             {
-              echo "sha=$DISPATCH_PUBLIC_SHA"
-              echo "version=$DISPATCH_VERSION"
-              echo "publish=true"
+              echo "origin_sha=$DISPATCH_ORIGIN_SHA"
+              echo "public_sha=$DISPATCH_PUBLIC_SHA"
             } >> "$GITHUB_OUTPUT"
           else
             {
-              echo "sha=$GITHUB_SHA"
-              echo "version=0.0.2"
-              echo "publish=false"
+              echo "origin_sha=0000000000000000000000000000000000000000"
+              echo "public_sha=$GITHUB_SHA"
             } >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+          ref: ${{ steps.source.outputs.public_sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version-file: .nvmrc
 
+      - name: Resolve version from package manifest
+        id: version
+        env:
+          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          [[ "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid package version"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
+            test "$DISPATCH_VERSION" = "$PACKAGE_VERSION" \
+              || { echo "::error::Dispatch version does not match package.json"; exit 1; }
+          fi
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Verify release source binding
         if: github.event_name == 'repository_dispatch'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ORIGIN_SHA: ${{ github.event.client_payload.origin_sha }}
-          PUBLIC_SHA: ${{ steps.source.outputs.sha }}
-          VERSION: ${{ steps.source.outputs.version }}
+          ORIGIN_SHA: ${{ steps.source.outputs.origin_sha }}
+          PUBLIC_SHA: ${{ steps.source.outputs.public_sha }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: >-
           node scripts/ci/verify-public-release-source.mjs
           --repo "$GITHUB_REPOSITORY"
@@ -70,93 +86,309 @@ jobs:
           --origin-sha "$ORIGIN_SHA"
           --wait
 
-      - name: Verify version
-        env:
-          VERSION: ${{ steps.source.outputs.version }}
-        run: test "$(node -p "require('./package.json').version")" = "$VERSION"
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - name: Preflight immutable release
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIGIN_SHA: ${{ steps.source.outputs.origin_sha }}
+          PUBLIC_SHA: ${{ steps.source.outputs.public_sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
+            scripts/ci/release-image-preflight.sh
+          else
+            {
+              echo "digest="
+              echo "mode=dry-run"
+            } >> "$GITHUB_OUTPUT"
+            echo "workflow_dispatch builds without publishing."
+          fi
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.public_sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
-        if: steps.source.outputs.publish == 'true'
+        if: needs.prepare.outputs.mode == 'publish'
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and optionally publish
+      - name: Build and publish content-addressed image
+        id: build
+        if: needs.prepare.outputs.mode == 'publish' || needs.prepare.outputs.mode == 'dry-run'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ steps.source.outputs.publish == 'true' }}
           build-args: |
-            APP_VERSION=${{ steps.source.outputs.version }}
-            APP_REVISION=${{ steps.source.outputs.sha }}
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.source.outputs.version }}
-            ${{ env.IMAGE }}:latest
+            APP_VERSION=${{ needs.prepare.outputs.version }}
+            APP_REVISION=${{ needs.prepare.outputs.public_sha }}
           labels: |
             org.opencontainers.image.title=Toril
-            org.opencontainers.image.description=Self-hosted Toril preview
+            org.opencontainers.image.description=Toril distribution foundation
             org.opencontainers.image.url=https://toril.dev
             org.opencontainers.image.source=https://github.com/CorgiCorner/toril
             org.opencontainers.image.licenses=AGPL-3.0-only
-            org.opencontainers.image.version=${{ steps.source.outputs.version }}
-            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.public_sha }}
+          outputs: ${{ needs.prepare.outputs.mode == 'publish' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  publish-release:
-    needs: build
-    if: >-
-      !cancelled() &&
-      needs.build.result == 'success' &&
-      github.repository == 'CorgiCorner/toril' &&
-      github.event_name == 'repository_dispatch'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Publish immutable GitHub Release
+      - name: Resolve immutable digest
+        id: digest
         env:
-          GH_TOKEN: ${{ github.token }}
-          PUBLIC_SHA: ${{ github.event.client_payload.public_sha }}
-          VERSION: ${{ github.event.client_payload.version }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          EXISTING_DIGEST: ${{ needs.prepare.outputs.digest }}
+          MODE: ${{ needs.prepare.outputs.mode }}
         run: |
           set -euo pipefail
-          [[ "$PUBLIC_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid public SHA"; exit 1; }
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid version"; exit 1; }
-          RELEASE_TAG="v$VERSION"
-          TAG_SHA="$(
-            git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}^{}" \
-              | cut -f1
-          )"
-          test "$TAG_SHA" = "$PUBLIC_SHA" \
-            || { echo "::error::Public tag $RELEASE_TAG is not bound to $PUBLIC_SHA"; exit 1; }
+          if [ "$MODE" = publish ]; then
+            DIGEST="$BUILT_DIGEST"
+          elif [ "$MODE" = dry-run ]; then
+            DIGEST=""
+          else
+            DIGEST="$EXISTING_DIGEST"
+          fi
+          if [ "$MODE" != dry-run ]; then
+            [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Invalid image digest"; exit 1; }
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
-          if RELEASE_JSON="$(
-            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --json tagName,name,isDraft,isPrerelease 2>/dev/null
-          )"; then
+      - name: Verify published image by digest on both platforms
+        if: github.event_name == 'repository_dispatch'
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          PUBLIC_SHA: ${{ needs.prepare.outputs.public_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: scripts/ci/verify-published-image.sh "$IMAGE@$DIGEST" "$VERSION" "$PUBLIC_SHA"
+
+  publish-version:
+    needs: [prepare, build]
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.public_sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR for version publication
+        if: needs.prepare.outputs.mode == 'publish'
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publish immutable version tag
+        if: needs.prepare.outputs.mode == 'publish'
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"
+
+      - name: Verify immutable version tag
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: test "$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+
+      - name: Create release manifest
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/release-image
+          DIGEST: ${{ needs.build.outputs.digest }}
+          ORIGIN_SHA: ${{ needs.prepare.outputs.origin_sha }}
+          PUBLIC_SHA: ${{ needs.prepare.outputs.public_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p "$ARTIFACT_DIR"
+          node scripts/ci/release-image-manifest.mjs create \
+            --manifest "$ARTIFACT_DIR/release-manifest.json" \
+            --version "$VERSION" \
+            --source-sha "$PUBLIC_SHA" \
+            --origin-sha "$ORIGIN_SHA" \
+            --image "$IMAGE" \
+            --digest "$DIGEST"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-image-manifest
+          path: ${{ runner.temp }}/release-image/release-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    needs: [prepare, publish-version]
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.public_sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-image-manifest
+          path: ${{ runner.temp }}/release-image
+
+      - name: Publish immutable GitHub Release
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/release-image
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_SHA: ${{ needs.prepare.outputs.public_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="v$VERSION"
+          TAG_SHA="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}^{}" | cut -f1)"
+          test "$TAG_SHA" = "$PUBLIC_SHA" || { echo "::error::Public tag is not bound to the release source"; exit 1; }
+          if RELEASE_JSON="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,name,isDraft,isPrerelease 2>/dev/null)"; then
             printf '%s' "$RELEASE_JSON" | jq -e --arg tag "$RELEASE_TAG" '
-              .tagName == $tag and
-              .name == $tag and
-              (.isDraft | not) and
-              (.isPrerelease | not)
-            ' >/dev/null \
-              || { echo "::error::Existing GitHub Release metadata does not match $RELEASE_TAG"; exit 1; }
-            echo "GitHub Release $RELEASE_TAG already exists with matching metadata."
-            exit 0
+              .tagName == $tag and .name == $tag and (.isDraft | not) and (.isPrerelease | not)
+            ' >/dev/null
+            EXISTING_DIR="$(mktemp -d)"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern release-manifest.json --dir "$EXISTING_DIR"
+            cmp "$ARTIFACT_DIR/release-manifest.json" "$EXISTING_DIR/release-manifest.json"
+            echo "GitHub Release $RELEASE_TAG already matches the immutable manifest."
+          else
+            NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+            node scripts/ci/extract-release-notes.mjs --version "$VERSION" --output "$NOTES_FILE"
+            gh release create "$RELEASE_TAG" \
+              "$ARTIFACT_DIR/release-manifest.json#release-manifest.json" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --notes-file "$NOTES_FILE"
           fi
 
-          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          printf '%s\n' 'Initial release.' > "$NOTES_FILE"
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$RELEASE_TAG" \
-            --notes-file "$NOTES_FILE"
+  update-latest:
+    needs: [prepare, build, publish-release]
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Update latest after release
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          LATEST_RELEASE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if [ "$LATEST_RELEASE" != "v$VERSION" ]; then
+            echo "A newer GitHub Release exists; latest remains unchanged."
+            exit 0
+          fi
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+          test "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+
+  verify-release:
+    needs: [prepare, build, publish-release, update-latest]
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.public_sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-image-manifest
+          path: ${{ runner.temp }}/release-image
+
+      - name: Verify final release distribution
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/release-image
+          DIGEST: ${{ needs.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          ORIGIN_SHA: ${{ needs.prepare.outputs.origin_sha }}
+          PUBLIC_SHA: ${{ needs.prepare.outputs.public_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/ci/verify-published-image.sh "$IMAGE@$DIGEST" "$VERSION" "$PUBLIC_SHA"
+          test "$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+          node scripts/ci/release-image-manifest.mjs verify \
+            --manifest "$ARTIFACT_DIR/release-manifest.json" \
+            --version "$VERSION" \
+            --source-sha "$PUBLIC_SHA" \
+            --origin-sha "$ORIGIN_SHA" \
+            --image "$IMAGE" \
+            --digest "$DIGEST"
+          RELEASE_DIR="$(mktemp -d)"
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern release-manifest.json --dir "$RELEASE_DIR"
+          cmp "$ARTIFACT_DIR/release-manifest.json" "$RELEASE_DIR/release-manifest.json"
+          LATEST_RELEASE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if [ "$LATEST_RELEASE" = "v$VERSION" ]; then
+            test "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+          fi

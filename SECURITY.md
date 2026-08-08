@@ -9,5 +9,6 @@ Include the affected Toril version, impact, reproduction steps, and any known
 mitigations. Remove credentials, production connection strings, personal data,
 and unrelated customer data from the report.
 
-Only the latest released version is eligible for security fixes. Toril is
-currently pre-release software and has no supported release yet.
+Only the latest released version is eligible for security fixes. The latest
+distribution foundation release is currently `v0.0.2`; it does not contain a
+Redis or Bull/BullMQ backend.

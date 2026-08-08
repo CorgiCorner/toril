@@ -1,8 +1,8 @@
 {
   "name": "toril",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
-  "description": "Self-hosted Toril preview",
+  "description": "Toril distribution foundation",
   "license": "AGPL-3.0-only",
   "homepage": "https://toril.dev",
   "repository": {
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "check:node": "node scripts/check-node.mjs",
-    "image:build": "docker build --build-arg APP_VERSION=0.0.2 --build-arg APP_REVISION=local -t toril:local .",
+    "image:build": "docker build --build-arg APP_VERSION=\"$(node -p \"require('./package.json').version\")\" --build-arg APP_REVISION=local -t toril:local .",
     "image:smoke": "scripts/ci/smoke-image.sh",
     "test": "node --test",
     "ci": "npm run check:node && npm test"
