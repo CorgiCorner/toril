@@ -39,6 +39,38 @@ test("returns all six checks for a healthy standalone Redis", async () => {
   });
 });
 
+test("accepts Redis 8 as newer than the BullMQ minimum", async () => {
+  const report = await runDoctor({
+    redisUrl: "redis://localhost:6379",
+    probe: healthyProbe({
+      async serverInfo() { return "redis_version:8.4.0\r\nredis_mode:standalone\r\n"; },
+      async scan() { return { keys: [], limited: false }; },
+    }),
+  });
+  const version = report.checks.find(({ id }) => id === "redis_version");
+
+  assert.deepEqual(version, {
+    id: "redis_version",
+    status: STATUS.PASS,
+    message: "Redis 8.4.0",
+  });
+});
+
+test("requires Redis 6.2 or newer", async () => {
+  const report = await runDoctor({
+    redisUrl: "redis://localhost:6379",
+    probe: healthyProbe({
+      async serverInfo() { return "redis_version:6.0.20\r\nredis_mode:standalone\r\n"; },
+      async scan() { return { keys: [], limited: false }; },
+    }),
+  });
+  const version = report.checks.find(({ id }) => id === "redis_version");
+
+  assert.equal(version.status, STATUS.FAIL);
+  assert.match(version.message, /requires Redis 6\.2 or newer - upgrade Redis/u);
+  assert.equal(version.docs, "https://docs.bullmq.io/guide/going-to-production");
+});
+
 test("fails a non-noeviction policy with the BullMQ documentation link", async () => {
   const report = await runDoctor({
     redisUrl: "redis://localhost:6379",
@@ -119,4 +151,20 @@ test("marks queue checks not verified when the bounded scan is incomplete", asyn
     STATUS.NOT_VERIFIED,
   );
   assert.equal(report.exitCode, 2);
+});
+
+test("explains how to fix an ACL that blocks SCAN", async () => {
+  const error = new Error("NOPERM this user has no permissions to run SCAN");
+  error.code = "NOPERM";
+  const report = await runDoctor({
+    redisUrl: "redis://localhost:6379",
+    probe: healthyProbe({ async scan() { throw error; } }),
+  });
+  const discovery = report.checks.find(({ id }) => id === "queue_discovery");
+
+  assert.deepEqual(discovery, {
+    id: "queue_discovery",
+    status: STATUS.NOT_VERIFIED,
+    message: "can't run SCAN - grant SCAN access to this Redis user",
+  });
 });

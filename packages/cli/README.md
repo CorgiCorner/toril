@@ -3,10 +3,19 @@
 `@toril/cli` installs the `toril` command. Its first tool is Toril Doctor, a
 read-only Redis preflight for Bull and BullMQ queues.
 
+Try the latest published version without installing it globally:
+
 ```sh
-toril doctor --redis redis://localhost:6379
-toril doctor --redis redis://localhost:6379 --json
+npx @toril/cli@latest --redis redis://localhost:6379
 ```
+
+For CI, skip the install prompt and request the stable JSON report:
+
+```sh
+npx --yes @toril/cli@latest --redis redis://localhost:6379 --json
+```
+
+After a global install, the same checks are available as `toril doctor`.
 
 `doctor` is optional, so `toril -r redis://localhost:6379` runs the same checks.
 For credentials, prefer `TORIL_REDIS_URL` instead of placing a password in your
@@ -21,6 +30,9 @@ Toril Doctor checks:
 5. bounded queue discovery with `SCAN`
 6. Bull/BullMQ compatibility hints
 
+Redis 6.2 and newer are supported. CI runs the doctor against Redis 6.2, 7.2,
+and 8.4.
+
 Every check uses one of the same three states as the Toril console:
 `pass`, `fail`, or `not verified`. Bull 3.x detection is deliberately labelled
 as a heuristic with `looks legacy (Bull 3.x?)`.
@@ -28,7 +40,9 @@ as a heuristic with `looks legacy (Bull 3.x?)`.
 If a managed Redis service blocks `CONFIG`, the result is:
 
 ```text
-not verified maxmemory_policy - can't verify on managed Redis - check the parameter group
+not verified maxmemory-policy: can't verify on managed Redis - check the parameter group
+
+1 of 6 not verified - check the items above.
 ```
 
 The process exits with `0` for pass, `1` for fail, `2` for not verified, and

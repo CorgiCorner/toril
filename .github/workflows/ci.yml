@@ -54,6 +54,8 @@ jobs:
             redis_image: redis:6.2-alpine@sha256:ec5e187c913d422cdf60f4216a5fdfb95246792c6de6fe21ff5bed75cbfc8c23
           - redis_version: "7.2"
             redis_image: redis:7.2-alpine@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+          - redis_version: "8.4"
+            redis_image: redis:8.4-alpine@sha256:bd4a0d37e7cd830117ffec9329052b4a1887afa060c265e1768f82b177ff6f43
     services:
       redis:
         image: ${{ matrix.redis_image }}

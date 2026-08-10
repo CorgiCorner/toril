@@ -8,6 +8,7 @@ export const DEFAULTS = Object.freeze({
 });
 
 const BULLMQ_DOCS = "https://docs.bullmq.io/guide/going-to-production";
+const MINIMUM_REDIS = Object.freeze({ major: 6, minor: 2 });
 const QUEUE_SUFFIXES = new Set([
   "active",
   "completed",
@@ -47,6 +48,21 @@ function infoFields(info) {
 function safeCode(error) {
   const code = error?.code;
   return typeof code === "string" && /^[A-Z0-9_]+$/u.test(code) ? code : undefined;
+}
+
+function isPermissionDenied(error) {
+  return safeCode(error) === "NOPERM" || /^NOPERM\b/u.test(String(error?.message ?? ""));
+}
+
+function redisVersionStatus(version) {
+  const match = /^(\d+)\.(\d+)(?:\.\d+)?(?:[-+].*)?$/u.exec(version);
+  if (!match) return STATUS.NOT_VERIFIED;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major > MINIMUM_REDIS.major ||
+    (major === MINIMUM_REDIS.major && minor >= MINIMUM_REDIS.minor)
+    ? STATUS.PASS
+    : STATUS.FAIL;
 }
 
 function parseTarget(redisUrl) {
@@ -121,7 +137,14 @@ export async function runDoctor({
       checks.push(check("connection", STATUS.PASS, "connected"));
     } catch (error) {
       const code = safeCode(error);
-      checks.push(check("connection", STATUS.FAIL, code ? `connection failed (${code})` : "connection failed"));
+      const failure = code ? `connection failed (${code})` : "connection failed";
+      checks.push(
+        check(
+          "connection",
+          STATUS.FAIL,
+          `${failure} - check the Redis URL and network access`,
+        ),
+      );
       for (const id of CHECK_IDS.slice(1)) {
         checks.push(check(id, STATUS.NOT_VERIFIED, "not run because connection failed"));
       }
@@ -132,7 +155,21 @@ export async function runDoctor({
     try {
       server = infoFields(await activeProbe.serverInfo());
       if (server.redis_version) {
-        checks.push(check("redis_version", STATUS.PASS, `Redis ${server.redis_version}`));
+        const versionStatus = redisVersionStatus(server.redis_version);
+        if (versionStatus === STATUS.PASS) {
+          checks.push(check("redis_version", STATUS.PASS, `Redis ${server.redis_version}`));
+        } else if (versionStatus === STATUS.FAIL) {
+          checks.push(
+            check(
+              "redis_version",
+              STATUS.FAIL,
+              `Redis ${server.redis_version}; BullMQ requires Redis 6.2 or newer - upgrade Redis`,
+              { docs: BULLMQ_DOCS },
+            ),
+          );
+        } else {
+          checks.push(check("redis_version", STATUS.NOT_VERIFIED, "can't verify the Redis version"));
+        }
       } else {
         checks.push(check("redis_version", STATUS.NOT_VERIFIED, "can't verify the Redis version"));
       }
@@ -152,7 +189,13 @@ export async function runDoctor({
       } else if (mode === "standalone") {
         checks.push(check("deployment_mode", STATUS.PASS, "standalone"));
       } else {
-        checks.push(check("deployment_mode", STATUS.FAIL, `${mode} is not supported by this doctor`));
+        checks.push(
+          check(
+            "deployment_mode",
+            STATUS.FAIL,
+            `${mode} is not supported by this doctor - use a standalone Redis endpoint`,
+          ),
+        );
       }
     } catch {
       checks.push(check("deployment_mode", STATUS.NOT_VERIFIED, "can't verify the Redis deployment mode"));
@@ -241,10 +284,25 @@ export async function runDoctor({
           );
         }
       }
-    } catch {
-      checks.push(check("queue_discovery", STATUS.NOT_VERIFIED, "can't verify queue discovery with SCAN"));
+    } catch (error) {
+      const blocked = isPermissionDenied(error);
       checks.push(
-        check("queue_compatibility", STATUS.NOT_VERIFIED, "can't verify queue compatibility without discovery"),
+        check(
+          "queue_discovery",
+          STATUS.NOT_VERIFIED,
+          blocked
+            ? "can't run SCAN - grant SCAN access to this Redis user"
+            : "can't verify queue discovery with SCAN - check Redis access and try again",
+        ),
+      );
+      checks.push(
+        check(
+          "queue_compatibility",
+          STATUS.NOT_VERIFIED,
+          blocked
+            ? "can't verify queue compatibility until SCAN access is available"
+            : "can't verify queue compatibility without discovery",
+        ),
       );
     }
 

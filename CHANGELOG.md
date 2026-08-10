@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.0.6 - 2026-08-10
+
+- Wait up to 10 minutes for a new npm version to become visible before failing verification.
+- Made Toril Doctor easier to read, with queue names and a clear summary.
+- Added Redis 8.4 to the Doctor test matrix.
+- Documented the published `npx @toril/cli@latest` command.
+
 ## 0.0.5 - 2026-08-10
 
 - Published Toril Doctor as the MIT-licensed `@toril/cli` package.

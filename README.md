@@ -9,11 +9,25 @@ hardened container, a guarded release path, and Toril Doctor: a read-only Redis
 preflight for Bull and BullMQ queues. The container still serves a minimal status
 page and does not connect to Redis.
 
+## Check Redis now
+
+Toril Doctor checks whether a standalone Redis is ready for Bull and BullMQ:
+
+```sh
+npx @toril/cli@latest --redis redis://localhost:6379
+```
+
+For CI, skip the install prompt and use the stable JSON report:
+
+```sh
+npx --yes @toril/cli@latest --redis redis://localhost:6379 --json
+```
+
 ## Install a release
 
 ```sh
-TORIL_VERSION=0.0.5 docker compose pull
-TORIL_VERSION=0.0.5 docker compose up -d
+TORIL_VERSION=0.0.6 docker compose pull
+TORIL_VERSION=0.0.6 docker compose up -d
 ```
 
 Open <http://localhost:8080>. The health endpoint is available at
@@ -44,7 +58,7 @@ installation path.
 
 ## Release status
 
-The current supported distribution foundation release is `v0.0.5`. It includes
+The current supported distribution foundation release is `v0.0.6`. It includes
 the container foundation and Toril Doctor, but it is not a queue dashboard
 release.
 

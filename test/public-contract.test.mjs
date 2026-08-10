@@ -56,7 +56,7 @@ test("publishes clear contribution, security, and trademark boundaries", () => {
   assert.match(trademark, /hosted services must use a\s+different name and branding/i);
 });
 
-test("ships the MIT-licensed Toril Doctor without premature npx instructions", () => {
+test("ships the MIT-licensed Toril Doctor with the verified npx command", () => {
   const rootManifest = JSON.parse(read("package.json"));
   const doctorManifest = JSON.parse(read("packages/cli/package.json"));
   assert.equal(doctorManifest.name, "@toril/cli");
@@ -71,8 +71,10 @@ test("ships the MIT-licensed Toril Doctor without premature npx instructions", (
   assert.match(packageReadme, /no telemetry/i);
   assert.match(packageReadme, /no network requests except to the Redis endpoint/i);
   assert.match(packageReadme, /pass`, `fail`, or `not verified`/);
-  const npxCommand = new RegExp(["npx", "(?:@toril/cli(?:@latest)?|toril)"].join("\\s+"), "i");
-  assert.doesNotMatch(`${read("README.md")}\n${packageReadme}`, npxCommand);
+  const canonical = "npx @toril/cli@latest --redis redis://localhost:6379";
+  assert.match(read("README.md"), new RegExp(canonical.replaceAll("/", "\\/")));
+  assert.match(packageReadme, new RegExp(canonical.replaceAll("/", "\\/")));
+  assert.match(packageReadme, /npx --yes @toril\/cli@latest .* --json/);
 });
 
 test("keeps the doctor runtime network boundary limited to Redis", () => {
