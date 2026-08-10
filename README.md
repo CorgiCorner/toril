@@ -12,8 +12,8 @@ page and does not connect to Redis.
 ## Install a release
 
 ```sh
-TORIL_VERSION=0.0.4 docker compose pull
-TORIL_VERSION=0.0.4 docker compose up -d
+TORIL_VERSION=0.0.5 docker compose pull
+TORIL_VERSION=0.0.5 docker compose up -d
 ```
 
 Open <http://localhost:8080>. The health endpoint is available at
@@ -44,12 +44,13 @@ installation path.
 
 ## Release status
 
-The current supported distribution foundation release is `v0.0.4`. It includes
+The current supported distribution foundation release is `v0.0.5`. It includes
 the container foundation and Toril Doctor, but it is not a queue dashboard
 release.
 
 ## License
 
-The Toril repository and container are licensed under the GNU Affero General
-Public License v3.0 only. Toril Doctor in `packages/cli` is licensed under the
-MIT License. See [LICENSE](LICENSE) and [packages/cli/LICENSE](packages/cli/LICENSE).
+The Toril server and container are licensed under the GNU Affero General Public
+License v3.0 only. Packages installed from npm, including `@toril/cli`, are
+licensed under the MIT License. See [LICENSE](LICENSE) and
+[packages/cli/LICENSE](packages/cli/LICENSE).

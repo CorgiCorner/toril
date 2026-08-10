@@ -1,6 +1,7 @@
-# Toril Doctor
+# @toril/cli
 
-Toril Doctor is a read-only Redis preflight for Bull and BullMQ queues.
+`@toril/cli` installs the `toril` command. Its first tool is Toril Doctor, a
+read-only Redis preflight for Bull and BullMQ queues.
 
 ```sh
 toril doctor --redis redis://localhost:6379

@@ -59,7 +59,7 @@ test("publishes clear contribution, security, and trademark boundaries", () => {
 test("ships the MIT-licensed Toril Doctor without premature npx instructions", () => {
   const rootManifest = JSON.parse(read("package.json"));
   const doctorManifest = JSON.parse(read("packages/cli/package.json"));
-  assert.equal(doctorManifest.name, "toril");
+  assert.equal(doctorManifest.name, "@toril/cli");
   assert.equal(doctorManifest.version, rootManifest.version);
   assert.equal(doctorManifest.license, "MIT");
   assert.equal(doctorManifest.repository.url, "git+https://github.com/CorgiCorner/toril.git");
@@ -71,7 +71,8 @@ test("ships the MIT-licensed Toril Doctor without premature npx instructions", (
   assert.match(packageReadme, /no telemetry/i);
   assert.match(packageReadme, /no network requests except to the Redis endpoint/i);
   assert.match(packageReadme, /pass`, `fail`, or `not verified`/);
-  assert.doesNotMatch(`${read("README.md")}\n${packageReadme}`, new RegExp(["npx", "toril"].join("\\s+"), "i"));
+  const npxCommand = new RegExp(["npx", "(?:@toril/cli(?:@latest)?|toril)"].join("\\s+"), "i");
+  assert.doesNotMatch(`${read("README.md")}\n${packageReadme}`, npxCommand);
 });
 
 test("keeps the doctor runtime network boundary limited to Redis", () => {

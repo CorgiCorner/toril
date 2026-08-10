@@ -1,6 +1,6 @@
 {
   "name": "toril",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "Toril distribution foundation",
   "license": "AGPL-3.0-only",
@@ -14,10 +14,11 @@
   ],
   "scripts": {
     "check:node": "node scripts/check-node.mjs",
+    "check:mit-boundaries": "node scripts/check-mit-import-boundaries.mjs",
     "image:build": "docker build --build-arg APP_VERSION=\"$(node -p \"require('./package.json').version\")\" --build-arg APP_REVISION=local -t toril:local .",
     "image:smoke": "scripts/ci/smoke-image.sh",
     "test": "node --test",
-    "ci": "npm run check:node && npm test"
+    "ci": "npm run check:node && npm test && npm run check:mit-boundaries"
   },
   "engines": {
     "node": ">=22.23.1 <23"

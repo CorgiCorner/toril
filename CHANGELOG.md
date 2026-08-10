@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.0.5 - 2026-08-10
+
+- Published Toril Doctor as the MIT-licensed `@toril/cli` package.
+- Added a check that keeps MIT packages separate from AGPL server code.
+
 ## 0.0.4 - 2026-08-10
 
 - Added Toril Doctor, a read-only Redis preflight for Bull and BullMQ queues.
