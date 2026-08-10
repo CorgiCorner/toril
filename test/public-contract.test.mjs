@@ -30,7 +30,8 @@ test("describes the current artifact without claiming a functional dashboard", (
   const security = read("SECURITY.md");
   const contributing = read("CONTRIBUTING.md");
   assert.match(readme, /distribution foundation/i);
-  assert.match(readme, /does not connect to Redis or inspect Bull or BullMQ queues/i);
+  assert.match(readme, /Toril Doctor: a read-only Redis\s+preflight for Bull and BullMQ queues/i);
+  assert.match(readme, /container still serves a minimal status\s+page and does not connect to Redis/i);
   assert.doesNotMatch(readme, /before product development starts/i);
   assert.doesNotMatch(readme, /pre-release software/i);
   assert.doesNotMatch(security, /has no supported release yet/i);
@@ -53,4 +54,40 @@ test("publishes clear contribution, security, and trademark boundaries", () => {
   const trademark = read("TRADEMARK.md");
   assert.match(trademark, /does not grant rights to\s+the Toril name or logo/i);
   assert.match(trademark, /hosted services must use a\s+different name and branding/i);
+});
+
+test("ships the MIT-licensed Toril Doctor without premature npx instructions", () => {
+  const rootManifest = JSON.parse(read("package.json"));
+  const doctorManifest = JSON.parse(read("packages/cli/package.json"));
+  assert.equal(doctorManifest.name, "toril");
+  assert.equal(doctorManifest.version, rootManifest.version);
+  assert.equal(doctorManifest.license, "MIT");
+  assert.equal(doctorManifest.repository.url, "git+https://github.com/CorgiCorner/toril.git");
+  assert.equal(doctorManifest.repository.directory, "packages/cli");
+  assert.equal(doctorManifest.bin.toril, "bin/toril.js");
+  assert.match(read("packages/cli/LICENSE"), /^MIT License/);
+
+  const packageReadme = read("packages/cli/README.md");
+  assert.match(packageReadme, /no telemetry/i);
+  assert.match(packageReadme, /no network requests except to the Redis endpoint/i);
+  assert.match(packageReadme, /pass`, `fail`, or `not verified`/);
+  assert.doesNotMatch(`${read("README.md")}\n${packageReadme}`, new RegExp(["npx", "toril"].join("\\s+"), "i"));
+});
+
+test("keeps the doctor runtime network boundary limited to Redis", () => {
+  const runtime = [
+    "packages/cli/src/cli.js",
+    "packages/cli/src/contract.js",
+    "packages/cli/src/doctor.js",
+    "packages/cli/src/redis-probe.js",
+  ].map(read).join("\n");
+  assert.doesNotMatch(runtime, /from ["']node:(?:dns|http|https|net|tls)["']/);
+  assert.doesNotMatch(runtime, /\bfetch\s*\(/);
+  assert.doesNotMatch(runtime, /telemetry/i);
+});
+
+test("keeps supported release references aligned", () => {
+  const version = JSON.parse(read("package.json")).version.replaceAll(".", "\\.");
+  assert.match(read("README.md"), new RegExp("release is `v" + version + "`"));
+  assert.match(read("SECURITY.md"), new RegExp("release is currently `v" + version + "`"));
 });

@@ -1,0 +1,38 @@
+{
+  "name": "toril",
+  "version": "0.0.4",
+  "description": "Read-only Redis preflight for Bull and BullMQ queues",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://toril.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CorgiCorner/toril.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/CorgiCorner/toril/issues"
+  },
+  "bin": {
+    "toril": "bin/toril.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node --test test/integration.test.mjs"
+  },
+  "dependencies": {
+    "@redis/client": "6.2.0"
+  }
+}

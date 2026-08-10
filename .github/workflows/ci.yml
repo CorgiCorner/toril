@@ -43,9 +43,42 @@ jobs:
           node-version-file: .nvmrc
       - run: npm run image:smoke
 
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - redis_version: "6.2"
+            redis_image: redis:6.2-alpine@sha256:ec5e187c913d422cdf60f4216a5fdfb95246792c6de6fe21ff5bed75cbfc8c23
+          - redis_version: "7.2"
+            redis_image: redis:7.2-alpine@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+    services:
+      redis:
+        image: ${{ matrix.redis_image }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@10.9.3
+      - run: npm ci
+      - run: npm --workspace packages/cli run test:integration
+        env:
+          TORIL_TEST_REDIS_URL: redis://127.0.0.1:6379
+
   ci-ok:
     if: always()
-    needs: [static, image]
+    needs: [static, image, doctor]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -53,4 +86,8 @@ jobs:
         env:
           STATIC_RESULT: ${{ needs.static.result }}
           IMAGE_RESULT: ${{ needs.image.result }}
-        run: test "$STATIC_RESULT" = success && test "$IMAGE_RESULT" = success
+          DOCTOR_RESULT: ${{ needs.doctor.result }}
+        run: >-
+          test "$STATIC_RESULT" = success &&
+          test "$IMAGE_RESULT" = success &&
+          test "$DOCTOR_RESULT" = success

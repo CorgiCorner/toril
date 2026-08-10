@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.0.4 - 2026-08-10
+
+- Added Toril Doctor, a read-only Redis preflight for Bull and BullMQ queues.
+- Added JSON output and stable exit codes for CI.
+
 ## 0.0.3 - 2026-08-08
 
 - Docker Compose now installs the released image, while source builds use a separate development file.

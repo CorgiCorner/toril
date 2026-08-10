@@ -5,14 +5,15 @@ domain is [toril.dev](https://toril.dev); documentation currently lives in this
 repository.
 
 The `0.0.x` line is Toril's distribution foundation. It provides a reproducible,
-hardened container and a guarded release path around a minimal status page. It
-does not connect to Redis or inspect Bull or BullMQ queues.
+hardened container, a guarded release path, and Toril Doctor: a read-only Redis
+preflight for Bull and BullMQ queues. The container still serves a minimal status
+page and does not connect to Redis.
 
 ## Install a release
 
 ```sh
-TORIL_VERSION=0.0.3 docker compose pull
-TORIL_VERSION=0.0.3 docker compose up -d
+TORIL_VERSION=0.0.4 docker compose pull
+TORIL_VERSION=0.0.4 docker compose up -d
 ```
 
 Open <http://localhost:8080>. The health endpoint is available at
@@ -43,10 +44,12 @@ installation path.
 
 ## Release status
 
-The current supported distribution foundation release is `v0.0.3`. It validates
-packaging and installation, but it is not a functional queue dashboard release.
+The current supported distribution foundation release is `v0.0.4`. It includes
+the container foundation and Toril Doctor, but it is not a queue dashboard
+release.
 
 ## License
 
-Toril is licensed under the GNU Affero General Public License v3.0 only.
-See [LICENSE](LICENSE).
+The Toril repository and container are licensed under the GNU Affero General
+Public License v3.0 only. Toril Doctor in `packages/cli` is licensed under the
+MIT License. See [LICENSE](LICENSE) and [packages/cli/LICENSE](packages/cli/LICENSE).

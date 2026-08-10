@@ -1,6 +1,6 @@
 {
   "name": "toril",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Toril distribution foundation",
   "license": "AGPL-3.0-only",
@@ -9,6 +9,9 @@
     "type": "git",
     "url": "git+https://github.com/CorgiCorner/toril.git"
   },
+  "workspaces": [
+    "packages/cli"
+  ],
   "scripts": {
     "check:node": "node scripts/check-node.mjs",
     "image:build": "docker build --build-arg APP_VERSION=\"$(node -p \"require('./package.json').version\")\" --build-arg APP_REVISION=local -t toril:local .",
@@ -27,7 +30,7 @@
     },
     "packageManager": {
       "name": "npm",
-      "version": ">=10.9.3 <11",
+      "version": ">=10.9.3 <12",
       "onFail": "error"
     }
   },
